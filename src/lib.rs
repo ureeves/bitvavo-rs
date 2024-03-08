@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Error type returned by the API.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     Reqwest(reqwest::Error),
     Serde(serde_json::Error),
