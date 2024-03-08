@@ -11,6 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub enum Error {
     Reqwest(reqwest::Error),
     Serde(serde_json::Error),
+    Bitvavo { code: u64, message: String },
 }
 
 impl From<reqwest::Error> for Error {
@@ -25,11 +26,34 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+fn response_from_slice<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, Error> {
+    #[derive(Deserialize, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BitvavoError {
+        error_code: u64,
+        error: String,
+    }
+
+    match serde_json::from_slice::<T>(bytes) {
+        Ok(response) => Ok(response),
+        Err(err) => match serde_json::from_slice::<BitvavoError>(bytes) {
+            Ok(err) => Err(Error::Bitvavo {
+                code: err.error_code,
+                message: err.error,
+            }),
+            Err(_) => Err(err.into()),
+        },
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Reqwest(err) => write!(f, "reqwest: {err}"),
             Error::Serde(err) => write!(f, "serde: {err}"),
+            Error::Bitvavo { code, message } => {
+                write!(f, "bitvavo: {code}: {message}")
+            }
         }
     }
 }
@@ -57,7 +81,7 @@ pub async fn time() -> Result<u64> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/time").await?;
     let body_bytes = http_response.bytes().await?;
 
-    let response = serde_json::from_slice::<Response>(&body_bytes)?;
+    let response = response_from_slice::<Response>(&body_bytes)?;
 
     Ok(response.time)
 }
@@ -83,7 +107,7 @@ pub async fn tickers() -> Result<Vec<Ticker>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/price").await?;
     let body_bytes = http_response.bytes().await?;
 
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
@@ -105,7 +129,7 @@ pub async fn ticker(pair: &str) -> Result<Ticker> {
     .await?;
     let body_bytes = http_response.bytes().await?;
 
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
@@ -153,7 +177,7 @@ pub struct OHLCV {
 }
 
 impl Serialize for OHLCV {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -243,7 +267,7 @@ pub async fn candles(
     let http_response = reqwest::get(url).await?;
     let body_bytes = http_response.bytes().await?;
 
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
@@ -317,7 +341,7 @@ pub async fn assets() -> Result<Vec<Asset>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/assets").await?;
 
     let body_bytes = http_response.bytes().await?;
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
@@ -336,7 +360,7 @@ pub async fn asset(symbol: &str) -> Result<Asset> {
         reqwest::get(format!("https://api.bitvavo.com/v2/assets?symbol={symbol}")).await?;
 
     let body_bytes = http_response.bytes().await?;
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
@@ -409,7 +433,7 @@ pub async fn markets() -> Result<Vec<Market>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/markets").await?;
 
     let body_bytes = http_response.bytes().await?;
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
@@ -428,7 +452,7 @@ pub async fn market(pair: &str) -> Result<Market> {
         reqwest::get(format!("https://api.bitvavo.com/v2/markets?market={pair}")).await?;
 
     let body_bytes = http_response.bytes().await?;
-    let response = serde_json::from_slice(&body_bytes)?;
+    let response = response_from_slice(&body_bytes)?;
 
     Ok(response)
 }
