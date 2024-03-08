@@ -8,7 +8,7 @@ jobs:
     container:
       image: rust:latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: cargo test --all-features
 
   format:
@@ -16,7 +16,7 @@ jobs:
     container:
       image: rust:latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
@@ -25,6 +25,6 @@ jobs:
     container:
       image: rust:latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: rustup component add clippy
       - run: cargo clippy --all-features -- -D warnings
