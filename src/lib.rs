@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use serde::de::{Error as SerdeError, SeqAccess, Visitor};
+use serde::de::{Error as SerdeError, SeqAccess, Unexpected, Visitor};
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -251,6 +251,101 @@ pub async fn candles(
     Ok(response)
 }
 
+/// Asset supported by Bitvavo.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Asset {
+    pub symbol: String,
+    pub name: String,
+    pub decimals: u64,
+    pub deposit_fee: String,
+    pub deposit_confirmations: u64,
+    pub deposit_status: AssetStatus,
+    pub withdrawal_fee: String,
+    pub withdrawal_min_amount: String,
+    pub withdrawal_status: AssetStatus,
+    pub networks: Vec<String>,
+    pub message: Option<String>,
+}
+
+/// The status of an asset.
+pub enum AssetStatus {
+    Ok,
+    Maintenance,
+    Delisted,
+}
+
+impl Serialize for AssetStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            AssetStatus::Ok => serializer.serialize_str("OK"),
+            AssetStatus::Maintenance => serializer.serialize_str("MAINTENANCE"),
+            AssetStatus::Delisted => serializer.serialize_str("DELISTED"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetStatus {
+    fn deserialize<D>(deserializer: D) -> Result<AssetStatus, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        match s.as_str() {
+            "OK" => Ok(AssetStatus::Ok),
+            "MAINTENANCE" => Ok(AssetStatus::Maintenance),
+            "DELISTED" => Ok(AssetStatus::Delisted),
+            s => Err(D::Error::invalid_value(
+                Unexpected::Str(s),
+                &"OK, MAINTENANCE, DELISTED",
+            )),
+        }
+    }
+}
+
+/// Get all the assets.
+///
+/// ```no_run
+///
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let assets = bitvavo::assets().await.unwrap();
+/// println!("Number of assets: {}", assets.len());
+/// # })
+pub async fn assets() -> Result<Vec<Asset>> {
+    let http_response = reqwest::get("https://api.bitvavo.com/v2/assets").await?;
+
+    let body_bytes = http_response.bytes().await?;
+    let response = serde_json::from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// Get the info of a particular asset.
+///
+/// ```no_run
+///
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let asset = bitvavo::asset("BTC").await.unwrap();
+/// println!("Number of decimals used for BTC: {}", asset.decimals);
+/// # })
+pub async fn asset(symbol: &str) -> Result<Asset> {
+    let http_response =
+        reqwest::get(format!("https://api.bitvavo.com/v2/assets?symbol={symbol}")).await?;
+
+    let body_bytes = http_response.bytes().await?;
+    let response = serde_json::from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,7 +364,7 @@ mod tests {
     async fn get_ticker() {
         ticker("BTC-EUR")
             .await
-            .expect("Getting the markets should succeed");
+            .expect("Getting the market should succeed");
     }
 
     #[tokio::test]
@@ -277,5 +372,17 @@ mod tests {
         candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None)
             .await
             .expect("Getting the candles should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_assets() {
+        assets().await.expect("Getting the assets should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_asset() {
+        asset("BTC")
+            .await
+            .expect("Getting the asset should succeed");
     }
 }
