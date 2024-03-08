@@ -301,7 +301,7 @@ impl<'de> Deserialize<'de> for AssetStatus {
             "DELISTED" => Ok(AssetStatus::Delisted),
             s => Err(D::Error::invalid_value(
                 Unexpected::Str(s),
-                &"OK, MAINTENANCE, DELISTED",
+                &"[OK, MAINTENANCE, DELISTED]",
             )),
         }
     }
@@ -339,6 +339,100 @@ pub async fn assets() -> Result<Vec<Asset>> {
 pub async fn asset(symbol: &str) -> Result<Asset> {
     let http_response =
         reqwest::get(format!("https://api.bitvavo.com/v2/assets?symbol={symbol}")).await?;
+
+    let body_bytes = http_response.bytes().await?;
+    let response = serde_json::from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Market {
+    #[serde(rename = "market")]
+    pub pair: String,
+    pub status: MarketStatus,
+    pub base: String,
+    pub quote: String,
+    pub price_precision: u64,
+    pub min_order_in_base_asset: String,
+    pub min_order_in_quote_asset: String,
+    pub max_order_in_base_asset: String,
+    pub max_order_in_quote_asset: String,
+    pub order_types: Vec<String>,
+}
+
+/// The status of a market.
+pub enum MarketStatus {
+    Trading,
+    Halted,
+    Auction,
+}
+
+impl Serialize for MarketStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            MarketStatus::Trading => serializer.serialize_str("trading"),
+            MarketStatus::Halted => serializer.serialize_str("halted"),
+            MarketStatus::Auction => serializer.serialize_str("auction"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MarketStatus {
+    fn deserialize<D>(deserializer: D) -> Result<MarketStatus, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        match s.as_str() {
+            "trading" => Ok(MarketStatus::Trading),
+            "halted" => Ok(MarketStatus::Halted),
+            "auction" => Ok(MarketStatus::Auction),
+            s => Err(D::Error::invalid_value(
+                Unexpected::Str(s),
+                &"[trading, halted, auction]",
+            )),
+        }
+    }
+}
+
+/// Get all the markets.
+///
+/// ```no_run
+///
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let markets = bitvavo::markets().await.unwrap();
+/// println!("Number of markets: {}", markets.len());
+/// # })
+pub async fn markets() -> Result<Vec<Market>> {
+    let http_response = reqwest::get("https://api.bitvavo.com/v2/markets").await?;
+
+    let body_bytes = http_response.bytes().await?;
+    let response = serde_json::from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// Get market information for a specific market.
+///
+/// ```no_run
+///
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let market = bitvavo::market("BTC-EUR").await.unwrap();
+/// println!("Price precision of BTC-EUR: {}", market.price_precision);
+/// # })
+pub async fn market(pair: &str) -> Result<Market> {
+    let http_response =
+        reqwest::get(format!("https://api.bitvavo.com/v2/markets?market={pair}")).await?;
 
     let body_bytes = http_response.bytes().await?;
     let response = serde_json::from_slice(&body_bytes)?;
@@ -384,5 +478,17 @@ mod tests {
         asset("BTC")
             .await
             .expect("Getting the asset should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_markets() {
+        markets().await.expect("Getting the markets should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_market() {
+        market("BTC-EUR")
+            .await
+            .expect("Getting the market should succeed");
     }
 }
