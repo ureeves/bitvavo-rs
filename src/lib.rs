@@ -40,7 +40,6 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Get the current time.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
@@ -72,7 +71,6 @@ pub struct Ticker {
 /// Get all the tickers.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
@@ -92,7 +90,6 @@ pub async fn tickers() -> Result<Vec<Ticker>> {
 /// Get the ticker for a particular market.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
@@ -215,7 +212,6 @@ impl<'de> Deserialize<'de> for OHLCV {
 /// Get candles for a particular market.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 /// use bitvavo::CandleInterval;
@@ -310,7 +306,6 @@ impl<'de> Deserialize<'de> for AssetStatus {
 /// Get all the assets.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
@@ -329,7 +324,6 @@ pub async fn assets() -> Result<Vec<Asset>> {
 /// Get the info of a particular asset.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
@@ -404,7 +398,6 @@ impl<'de> Deserialize<'de> for MarketStatus {
 /// Get all the markets.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
@@ -423,7 +416,6 @@ pub async fn markets() -> Result<Vec<Market>> {
 /// Get market information for a specific market.
 ///
 /// ```no_run
-///
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
