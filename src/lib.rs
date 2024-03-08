@@ -60,6 +60,56 @@ pub async fn time() -> Result<u64> {
     Ok(response.time)
 }
 
+/// A ticker for a given market pair.
+#[derive(Deserialize, Serialize)]
+pub struct Ticker {
+    pub market: String,
+    pub price: Option<String>,
+}
+
+/// Get all the tickers.
+///
+/// ```no_run
+///
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let ms = bitvavo::tickers().await.unwrap();
+/// println!("Number of markets: {}", ms.len());
+/// # })
+/// ```
+pub async fn tickers() -> Result<Vec<Ticker>> {
+    let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/price").await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = serde_json::from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// Get the ticker for a particular market.
+///
+/// ```no_run
+///
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let m = bitvavo::ticker("BTC-EUR").await.unwrap();
+/// println!("Price for BTC-EUR: {}", m.price.unwrap_or_default());
+/// # })
+/// ```
+pub async fn ticker(pair: &str) -> Result<Ticker> {
+    let http_response = reqwest::get(format!(
+        "https://api.bitvavo.com/v2/ticker/price?market={pair}"
+    ))
+    .await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = serde_json::from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +117,17 @@ mod tests {
     #[tokio::test]
     async fn get_time() {
         time().await.expect("Getting the time should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_tickers() {
+        tickers().await.expect("Getting the markets should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_ticker() {
+        ticker("BTC-EUR")
+            .await
+            .expect("Getting the markets should succeed");
     }
 }
