@@ -588,7 +588,7 @@ pub async fn candles(
 
 /// A ticker for a given market pair.
 #[derive(Deserialize, Serialize)]
-pub struct Ticker {
+pub struct TickerPrice {
     pub market: String,
     pub price: Option<String>,
 }
@@ -599,11 +599,11 @@ pub struct Ticker {
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
-/// let ms = bitvavo::tickers().await.unwrap();
+/// let ms = bitvavo::ticker_prices().await.unwrap();
 /// println!("Number of markets: {}", ms.len());
 /// # })
 /// ```
-pub async fn tickers() -> Result<Vec<Ticker>> {
+pub async fn ticker_prices() -> Result<Vec<TickerPrice>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/price").await?;
     let body_bytes = http_response.bytes().await?;
 
@@ -618,11 +618,11 @@ pub async fn tickers() -> Result<Vec<Ticker>> {
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
 ///
-/// let m = bitvavo::ticker("BTC-EUR").await.unwrap();
+/// let m = bitvavo::ticker_price("BTC-EUR").await.unwrap();
 /// println!("Price for BTC-EUR: {}", m.price.unwrap_or_default());
 /// # })
 /// ```
-pub async fn ticker(pair: &str) -> Result<Ticker> {
+pub async fn ticker_price(pair: &str) -> Result<TickerPrice> {
     let http_response = reqwest::get(format!(
         "https://api.bitvavo.com/v2/ticker/price?market={pair}"
     ))
@@ -803,13 +803,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_tickers() {
-        tickers().await.expect("Getting the markets should succeed");
+    async fn get_ticker_prices() {
+        ticker_prices()
+            .await
+            .expect("Getting the markets should succeed");
     }
 
     #[tokio::test]
-    async fn get_ticker() {
-        ticker("BTC-EUR")
+    async fn get_ticker_price() {
+        ticker_price("BTC-EUR")
             .await
             .expect("Getting the market should succeed");
     }
