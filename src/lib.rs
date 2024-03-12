@@ -1,7 +1,8 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use serde::de::{Error as SerdeError, SeqAccess, Unexpected, Visitor};
+use reqwest::Response;
+use serde::de::{DeserializeOwned, Error as SerdeError, SeqAccess, Unexpected, Visitor};
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -26,7 +27,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-fn response_from_slice<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, Error> {
+async fn response_from_request<T: DeserializeOwned>(rsp: Response) -> Result<T, Error> {
     #[derive(Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
     struct BitvavoError {
@@ -34,15 +35,17 @@ fn response_from_slice<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, Err
         error: String,
     }
 
-    match serde_json::from_slice::<T>(bytes) {
-        Ok(response) => Ok(response),
-        Err(err) => match serde_json::from_slice::<BitvavoError>(bytes) {
-            Ok(err) => Err(Error::Bitvavo {
-                code: err.error_code,
-                message: err.error,
-            }),
-            Err(_) => Err(err.into()),
-        },
+    let status = rsp.status();
+    let bytes = rsp.bytes().await?;
+
+    if status.is_success() {
+        Ok(serde_json::from_slice(&bytes)?)
+    } else {
+        let bitvavo_err: BitvavoError = serde_json::from_slice(&bytes)?;
+        Err(Error::Bitvavo {
+            code: bitvavo_err.error_code,
+            message: bitvavo_err.error,
+        })
     }
 }
 
@@ -79,9 +82,7 @@ pub async fn time() -> Result<u64> {
     }
 
     let http_response = reqwest::get("https://api.bitvavo.com/v2/time").await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice::<Response>(&body_bytes)?;
+    let response = response_from_request::<Response>(http_response).await?;
 
     Ok(response.time)
 }
@@ -253,10 +254,7 @@ impl<'de> Deserialize<'de> for AssetStatus {
 /// # })
 pub async fn assets() -> Result<Vec<Asset>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/assets").await?;
-
-    let body_bytes = http_response.bytes().await?;
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -272,10 +270,7 @@ pub async fn assets() -> Result<Vec<Asset>> {
 pub async fn asset(symbol: &str) -> Result<Asset> {
     let http_response =
         reqwest::get(format!("https://api.bitvavo.com/v2/assets?symbol={symbol}")).await?;
-
-    let body_bytes = http_response.bytes().await?;
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -345,10 +340,7 @@ impl<'de> Deserialize<'de> for MarketStatus {
 /// # })
 pub async fn markets() -> Result<Vec<Market>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/markets").await?;
-
-    let body_bytes = http_response.bytes().await?;
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -364,10 +356,7 @@ pub async fn markets() -> Result<Vec<Market>> {
 pub async fn market(pair: &str) -> Result<Market> {
     let http_response =
         reqwest::get(format!("https://api.bitvavo.com/v2/markets?market={pair}")).await?;
-
-    let body_bytes = http_response.bytes().await?;
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -454,9 +443,7 @@ pub async fn order_book(market: &str, depth: Option<u64>) -> Result<OrderBook> {
     }
 
     let http_response = reqwest::get(url).await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
+    let response = response_from_request(http_response).await?;
 
     Ok(response)
 }
@@ -541,9 +528,7 @@ pub async fn trades(
     }
 
     let http_response = reqwest::get(url).await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
+    let response = response_from_request(http_response).await?;
 
     Ok(response)
 }
@@ -579,9 +564,7 @@ pub async fn candles(
     }
 
     let http_response = reqwest::get(url).await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
+    let response = response_from_request(http_response).await?;
 
     Ok(response)
 }
@@ -605,10 +588,7 @@ pub struct TickerPrice {
 /// ```
 pub async fn ticker_prices() -> Result<Vec<TickerPrice>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/price").await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -627,10 +607,7 @@ pub async fn ticker_price(pair: &str) -> Result<TickerPrice> {
         "https://api.bitvavo.com/v2/ticker/price?market={pair}"
     ))
     .await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -657,10 +634,7 @@ pub struct TickerBook {
 /// ```
 pub async fn ticker_books() -> Result<Vec<TickerBook>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/book").await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -679,10 +653,7 @@ pub async fn ticker_book(market: &str) -> Result<TickerBook> {
         "https://api.bitvavo.com/v2/ticker/book?market={market}"
     ))
     .await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -719,10 +690,7 @@ pub struct Ticker24h {
 /// ```
 pub async fn tickers_24h() -> Result<Vec<Ticker24h>> {
     let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/24h").await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
@@ -741,10 +709,7 @@ pub async fn ticker_24h(market: &str) -> Result<Ticker24h> {
         "https://api.bitvavo.com/v2/ticker/24h?market={market}"
     ))
     .await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
+    let response = response_from_request(http_response).await?;
     Ok(response)
 }
 
