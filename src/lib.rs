@@ -88,6 +88,7 @@ pub async fn time() -> Result<u64> {
 }
 
 /// Time interval between each candlestick.
+#[derive(Debug)]
 pub enum CandleInterval {
     OneMinute,
     FiveMinutes,
@@ -120,6 +121,7 @@ impl fmt::Display for CandleInterval {
     }
 }
 
+#[derive(Debug)]
 pub struct OHLCV {
     pub time: u64,
     pub open: String,
@@ -188,7 +190,7 @@ impl<'de> Deserialize<'de> for OHLCV {
 }
 
 /// Asset supported by Bitvavo.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub symbol: String,
@@ -205,6 +207,7 @@ pub struct Asset {
 }
 
 /// The status of an asset.
+#[derive(Debug)]
 pub enum AssetStatus {
     Ok,
     Maintenance,
@@ -274,7 +277,7 @@ pub async fn asset(symbol: &str) -> Result<Asset> {
     Ok(response)
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Market {
     #[serde(rename = "market")]
@@ -291,6 +294,7 @@ pub struct Market {
 }
 
 /// The status of a market.
+#[derive(Debug)]
 pub enum MarketStatus {
     Trading,
     Halted,
@@ -361,7 +365,7 @@ pub async fn market(pair: &str) -> Result<Market> {
 }
 
 /// Order book for a particular market.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct OrderBook {
     pub market: String,
     pub nonce: u64,
@@ -370,6 +374,7 @@ pub struct OrderBook {
 }
 
 /// A quote in the order book.
+#[derive(Debug)]
 pub struct Quote {
     pub price: String,
     pub amount: String,
@@ -449,7 +454,7 @@ pub async fn order_book(market: &str, depth: Option<u64>) -> Result<OrderBook> {
 }
 
 /// A trade performed on the exchange for a particular market.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Trade {
     pub id: String,
     pub timestamp: u64,
@@ -459,6 +464,7 @@ pub struct Trade {
 }
 
 /// The side of a trade.
+#[derive(Debug)]
 pub enum TradeSide {
     Buy,
     Sell,
@@ -570,7 +576,7 @@ pub async fn candles(
 }
 
 /// A ticker for a given market pair.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TickerPrice {
     pub market: String,
     pub price: Option<String>,
@@ -612,7 +618,7 @@ pub async fn ticker_price(pair: &str) -> Result<TickerPrice> {
 }
 
 /// Highest buy and lowest sell prices currently available for a market.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TickerBook {
     pub market: Option<String>,
@@ -658,7 +664,7 @@ pub async fn ticker_book(market: &str) -> Result<TickerBook> {
 }
 
 /// High, low, open, last, and volume information for trades for a given market over the previous 24h.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Ticker24h {
     pub market: String,
