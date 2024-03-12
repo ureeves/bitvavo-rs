@@ -371,6 +371,183 @@ pub async fn market(pair: &str) -> Result<Market> {
     Ok(response)
 }
 
+/// Order book for a particular market.
+#[derive(Deserialize, Serialize)]
+pub struct OrderBook {
+    pub market: String,
+    pub nonce: u64,
+    pub bids: Vec<Quote>,
+    pub asks: Vec<Quote>,
+}
+
+/// A quote in the order book.
+pub struct Quote {
+    pub price: String,
+    pub amount: String,
+}
+
+impl Serialize for Quote {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(3))?;
+
+        seq.serialize_element(&self.price)?;
+        seq.serialize_element(&self.amount)?;
+
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Quote {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct QuoteVisitor;
+
+        impl<'de> Visitor<'de> for QuoteVisitor {
+            type Value = Quote;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "Quote")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                macro_rules! next_seq_element {
+                    ($seq:ident, $name:ident) => {
+                        $seq.next_element()?
+                            .ok_or_else(|| A::Error::missing_field(stringify!($name)))?
+                    };
+                }
+
+                Ok(Quote {
+                    price: next_seq_element!(seq, price),
+                    amount: next_seq_element!(seq, amount),
+                })
+            }
+        }
+
+        deserializer.deserialize_seq(QuoteVisitor)
+    }
+}
+
+/// Get the order book for a particular market.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let ob = bitvavo::order_book("BTC-EUR", Some(2)).await.unwrap();
+/// println!("Number of bids: {}", ob.bids.len());
+/// # })
+/// ```
+pub async fn order_book(market: &str, depth: Option<u64>) -> Result<OrderBook> {
+    let mut url = format!("https://api.bitvavo.com/v2/{market}/book");
+
+    if let Some(depth) = depth {
+        url.push_str(&format!("?depth={depth}"));
+    }
+
+    let http_response = reqwest::get(url).await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// A trade performed on the exchange for a particular market.
+#[derive(Deserialize, Serialize)]
+pub struct Trade {
+    pub id: String,
+    pub timestamp: u64,
+    pub amount: String,
+    pub price: String,
+    pub side: TradeSide,
+}
+
+/// The side of a trade.
+pub enum TradeSide {
+    Buy,
+    Sell,
+}
+
+impl Serialize for TradeSide {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            TradeSide::Buy => serializer.serialize_str("buy"),
+            TradeSide::Sell => serializer.serialize_str("sell"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TradeSide {
+    fn deserialize<D>(deserializer: D) -> Result<TradeSide, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        match s.as_str() {
+            "buy" => Ok(TradeSide::Buy),
+            "sell" => Ok(TradeSide::Sell),
+            s => Err(D::Error::invalid_value(Unexpected::Str(s), &"[buy, sell]")),
+        }
+    }
+}
+
+/// Get the trades for a particular market.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let trades = bitvavo::trades("BTC-EUR", None, None, None, None, None).await.unwrap();
+/// println!("Number of trades: {}", trades.len());
+/// # })
+/// ```
+pub async fn trades(
+    market: &str,
+    limit: Option<u64>,
+    start: Option<u64>,
+    end: Option<u64>,
+    trade_id_from: Option<String>,
+    trade_id_to: Option<String>,
+) -> Result<Vec<Trade>> {
+    let mut url = format!("https://api.bitvavo.com/v2/{market}/trades");
+
+    if let Some(limit) = limit {
+        url.push_str(&format!("?limit={limit}"));
+    }
+    if let Some(start) = start {
+        url.push_str(&format!("&start={start}"));
+    }
+    if let Some(end) = end {
+        url.push_str(&format!("&end={end}"));
+    }
+    if let Some(trade_id_from) = trade_id_from {
+        url.push_str(&format!("&tradeIdFrom={trade_id_from}"));
+    }
+    if let Some(trade_id_to) = trade_id_to {
+        url.push_str(&format!("&tradeIdTo={trade_id_to}"));
+    }
+
+    let http_response = reqwest::get(url).await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
 /// Get candles for a particular market.
 ///
 /// ```no_run
@@ -457,6 +634,120 @@ pub async fn ticker(pair: &str) -> Result<Ticker> {
     Ok(response)
 }
 
+/// Highest buy and lowest sell prices currently available for a market.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TickerBook {
+    pub market: Option<String>,
+    pub bid: Option<String>,
+    pub bid_size: Option<String>,
+    pub ask: Option<String>,
+    pub ask_size: Option<String>,
+}
+
+/// Retrieve the highest buy and lowest sell prices currently available for all markets.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let tb = bitvavo::ticker_books().await.unwrap();
+/// println!("Number of tickers: {}", tb.len());
+/// # })
+/// ```
+pub async fn ticker_books() -> Result<Vec<TickerBook>> {
+    let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/book").await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// Retrieve the highest buy and lowest sell prices currently available for a given market.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let tb = bitvavo::ticker_book("BTC-EUR").await.unwrap();
+/// println!("Highest buy price for BTC-EUR: {}", tb.ask.unwrap());
+/// # })
+/// ```
+pub async fn ticker_book(market: &str) -> Result<TickerBook> {
+    let http_response = reqwest::get(format!(
+        "https://api.bitvavo.com/v2/ticker/book?market={market}"
+    ))
+    .await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// High, low, open, last, and volume information for trades for a given market over the previous 24h.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ticker24h {
+    pub market: String,
+    pub start_timestamp: Option<u64>,
+    pub timestamp: Option<u64>,
+    pub open: Option<String>,
+    pub open_timestamp: Option<u64>,
+    pub high: Option<String>,
+    pub low: Option<String>,
+    pub last: Option<String>,
+    pub close_timestamp: Option<u64>,
+    pub bid: Option<String>,
+    pub bid_size: Option<String>,
+    pub ask: Option<String>,
+    pub ask_size: Option<String>,
+    pub volume: Option<String>,
+    pub volume_quote: Option<String>,
+}
+
+/// Retrieve high, low, open, last, and volume information for trades for all markets over the previous 24h.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let t24h = bitvavo::tickers_24h().await.unwrap();
+/// println!("Number of tickers: {}", t24h.len());
+/// # })
+/// ```
+pub async fn tickers_24h() -> Result<Vec<Ticker24h>> {
+    let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/24h").await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// Retrieve high, low, open, last, and volume information for trades for a given market over the previous 24h.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let t24h = bitvavo::ticker_24h("BTC-EUR").await.unwrap();
+/// println!("24h ask for BTC-EUR: {}", t24h.ask.unwrap());
+/// # })
+/// ```
+pub async fn ticker_24h(market: &str) -> Result<Ticker24h> {
+    let http_response = reqwest::get(format!(
+        "https://api.bitvavo.com/v2/ticker/24h?market={market}"
+    ))
+    .await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,6 +782,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_order_book() {
+        order_book("BTC-EUR", Some(2))
+            .await
+            .expect("Getting the order book should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_trades() {
+        trades("BTC-EUR", None, None, None, None, None)
+            .await
+            .expect("Getting the order book should succeed");
+    }
+
+    #[tokio::test]
     async fn get_candles() {
         candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None)
             .await
@@ -507,5 +812,33 @@ mod tests {
         ticker("BTC-EUR")
             .await
             .expect("Getting the market should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_ticker_books() {
+        ticker_books()
+            .await
+            .expect("Getting the ticker books should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_ticker_book() {
+        ticker_book("BTC-EUR")
+            .await
+            .expect("Getting the ticker book should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_tickers_24h() {
+        tickers_24h()
+            .await
+            .expect("Getting the 24h tickers should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_ticker_24h() {
+        ticker_24h("BTC-EUR")
+            .await
+            .expect("Getting the 24h tickers should succeed");
     }
 }
