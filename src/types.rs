@@ -37,6 +37,7 @@ impl fmt::Display for CandleInterval {
     }
 }
 
+/// A candlestick for a given market over a given time interval.
 #[derive(Debug)]
 pub struct OHLCV {
     pub time: u64,
@@ -131,6 +132,7 @@ impl<'de> Deserialize<'de> for AssetStatus {
     }
 }
 
+/// Information about a market on Bitvavo.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Market {
