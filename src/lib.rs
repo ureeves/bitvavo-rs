@@ -86,54 +86,6 @@ pub async fn time() -> Result<u64> {
     Ok(response.time)
 }
 
-/// A ticker for a given market pair.
-#[derive(Deserialize, Serialize)]
-pub struct Ticker {
-    pub market: String,
-    pub price: Option<String>,
-}
-
-/// Get all the tickers.
-///
-/// ```no_run
-/// # tokio_test::block_on(async {
-/// use bitvavo_api as bitvavo;
-///
-/// let ms = bitvavo::tickers().await.unwrap();
-/// println!("Number of markets: {}", ms.len());
-/// # })
-/// ```
-pub async fn tickers() -> Result<Vec<Ticker>> {
-    let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/price").await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
-    Ok(response)
-}
-
-/// Get the ticker for a particular market.
-///
-/// ```no_run
-/// # tokio_test::block_on(async {
-/// use bitvavo_api as bitvavo;
-///
-/// let m = bitvavo::ticker("BTC-EUR").await.unwrap();
-/// println!("Price for BTC-EUR: {}", m.price.unwrap_or_default());
-/// # })
-/// ```
-pub async fn ticker(pair: &str) -> Result<Ticker> {
-    let http_response = reqwest::get(format!(
-        "https://api.bitvavo.com/v2/ticker/price?market={pair}"
-    ))
-    .await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
-    Ok(response)
-}
-
 /// Time interval between each candlestick.
 pub enum CandleInterval {
     OneMinute,
@@ -232,44 +184,6 @@ impl<'de> Deserialize<'de> for OHLCV {
 
         deserializer.deserialize_seq(OHLCVVisitor)
     }
-}
-
-/// Get candles for a particular market.
-///
-/// ```no_run
-/// # tokio_test::block_on(async {
-/// use bitvavo_api as bitvavo;
-/// use bitvavo::CandleInterval;
-///
-/// let cs = bitvavo::candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None).await.unwrap();
-/// println!("High for BTC-EUR at {} was {}", cs[0].time, cs[0].high);
-/// # })
-/// ```
-pub async fn candles(
-    market: &str,
-    interval: CandleInterval,
-    limit: Option<u16>,
-    start: Option<u64>,
-    end: Option<u64>,
-) -> Result<Vec<OHLCV>> {
-    let mut url = format!("https://api.bitvavo.com/v2/{market}/candles?interval={interval}");
-
-    if let Some(limit) = limit {
-        url.push_str(&format!("&limit={limit}"));
-    }
-    if let Some(start) = start {
-        url.push_str(&format!("&start={start}"));
-    }
-    if let Some(end) = end {
-        url.push_str(&format!("&end={end}"));
-    }
-
-    let http_response = reqwest::get(url).await?;
-    let body_bytes = http_response.bytes().await?;
-
-    let response = response_from_slice(&body_bytes)?;
-
-    Ok(response)
 }
 
 /// Asset supported by Bitvavo.
@@ -457,6 +371,92 @@ pub async fn market(pair: &str) -> Result<Market> {
     Ok(response)
 }
 
+/// Get candles for a particular market.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+/// use bitvavo::CandleInterval;
+///
+/// let cs = bitvavo::candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None).await.unwrap();
+/// println!("High for BTC-EUR at {} was {}", cs[0].time, cs[0].high);
+/// # })
+/// ```
+pub async fn candles(
+    market: &str,
+    interval: CandleInterval,
+    limit: Option<u16>,
+    start: Option<u64>,
+    end: Option<u64>,
+) -> Result<Vec<OHLCV>> {
+    let mut url = format!("https://api.bitvavo.com/v2/{market}/candles?interval={interval}");
+
+    if let Some(limit) = limit {
+        url.push_str(&format!("&limit={limit}"));
+    }
+    if let Some(start) = start {
+        url.push_str(&format!("&start={start}"));
+    }
+    if let Some(end) = end {
+        url.push_str(&format!("&end={end}"));
+    }
+
+    let http_response = reqwest::get(url).await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// A ticker for a given market pair.
+#[derive(Deserialize, Serialize)]
+pub struct Ticker {
+    pub market: String,
+    pub price: Option<String>,
+}
+
+/// Get all the tickers.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let ms = bitvavo::tickers().await.unwrap();
+/// println!("Number of markets: {}", ms.len());
+/// # })
+/// ```
+pub async fn tickers() -> Result<Vec<Ticker>> {
+    let http_response = reqwest::get("https://api.bitvavo.com/v2/ticker/price").await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
+/// Get the ticker for a particular market.
+///
+/// ```no_run
+/// # tokio_test::block_on(async {
+/// use bitvavo_api as bitvavo;
+///
+/// let m = bitvavo::ticker("BTC-EUR").await.unwrap();
+/// println!("Price for BTC-EUR: {}", m.price.unwrap_or_default());
+/// # })
+/// ```
+pub async fn ticker(pair: &str) -> Result<Ticker> {
+    let http_response = reqwest::get(format!(
+        "https://api.bitvavo.com/v2/ticker/price?market={pair}"
+    ))
+    .await?;
+    let body_bytes = http_response.bytes().await?;
+
+    let response = response_from_slice(&body_bytes)?;
+
+    Ok(response)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,25 +464,6 @@ mod tests {
     #[tokio::test]
     async fn get_time() {
         time().await.expect("Getting the time should succeed");
-    }
-
-    #[tokio::test]
-    async fn get_tickers() {
-        tickers().await.expect("Getting the markets should succeed");
-    }
-
-    #[tokio::test]
-    async fn get_ticker() {
-        ticker("BTC-EUR")
-            .await
-            .expect("Getting the market should succeed");
-    }
-
-    #[tokio::test]
-    async fn get_candles() {
-        candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None)
-            .await
-            .expect("Getting the candles should succeed");
     }
 
     #[tokio::test]
@@ -505,6 +486,25 @@ mod tests {
     #[tokio::test]
     async fn get_market() {
         market("BTC-EUR")
+            .await
+            .expect("Getting the market should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_candles() {
+        candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None)
+            .await
+            .expect("Getting the candles should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_tickers() {
+        tickers().await.expect("Getting the markets should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_ticker() {
+        ticker("BTC-EUR")
             .await
             .expect("Getting the market should succeed");
     }
