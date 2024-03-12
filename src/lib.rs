@@ -814,4 +814,12 @@ mod tests {
             .await
             .expect("Getting the 24h tickers should succeed");
     }
+
+    #[tokio::test]
+    async fn error_handling() {
+        let err = ticker_price("BAD-MARKET")
+            .await
+            .expect_err("Getting an invalid market should fail");
+        assert!(matches!(err, Error::Bitvavo { .. }));
+    }
 }
