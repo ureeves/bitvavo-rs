@@ -1,10 +1,13 @@
+pub mod types;
+
 use std::error::Error as StdError;
 use std::fmt;
 
 use reqwest::Response;
-use serde::de::{DeserializeOwned, Error as SerdeError, SeqAccess, Unexpected, Visitor};
-use serde::ser::SerializeSeq;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+
+use types::*;
 
 /// Error type returned by the API.
 #[derive(Debug)]
@@ -87,165 +90,6 @@ pub async fn time() -> Result<u64> {
     Ok(response.time)
 }
 
-/// Time interval between each candlestick.
-#[derive(Debug)]
-pub enum CandleInterval {
-    OneMinute,
-    FiveMinutes,
-    FifteenMinutes,
-    ThirtyMinutes,
-    OneHour,
-    TwoHours,
-    FourHours,
-    SixHours,
-    EightHours,
-    TwelveHours,
-    OneDay,
-}
-
-impl fmt::Display for CandleInterval {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CandleInterval::OneMinute => write!(f, "1m"),
-            CandleInterval::FiveMinutes => write!(f, "5m"),
-            CandleInterval::FifteenMinutes => write!(f, "15m"),
-            CandleInterval::ThirtyMinutes => write!(f, "30m"),
-            CandleInterval::OneHour => write!(f, "1h"),
-            CandleInterval::TwoHours => write!(f, "2h"),
-            CandleInterval::FourHours => write!(f, "4h"),
-            CandleInterval::SixHours => write!(f, "6h"),
-            CandleInterval::EightHours => write!(f, "8h"),
-            CandleInterval::TwelveHours => write!(f, "12h"),
-            CandleInterval::OneDay => write!(f, "1d"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct OHLCV {
-    pub time: u64,
-    pub open: String,
-    pub high: String,
-    pub low: String,
-    pub close: String,
-    pub volume: String,
-}
-
-impl Serialize for OHLCV {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut seq = serializer.serialize_seq(Some(6))?;
-
-        seq.serialize_element(&self.time)?;
-        seq.serialize_element(&self.open)?;
-        seq.serialize_element(&self.high)?;
-        seq.serialize_element(&self.low)?;
-        seq.serialize_element(&self.close)?;
-        seq.serialize_element(&self.volume)?;
-
-        seq.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for OHLCV {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct OHLCVVisitor;
-
-        impl<'de> Visitor<'de> for OHLCVVisitor {
-            type Value = OHLCV;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "OHLCV")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                macro_rules! next_seq_element {
-                    ($seq:ident, $name:ident) => {
-                        $seq.next_element()?
-                            .ok_or_else(|| A::Error::missing_field(stringify!($name)))?
-                    };
-                }
-
-                Ok(OHLCV {
-                    time: next_seq_element!(seq, time),
-                    open: next_seq_element!(seq, open),
-                    high: next_seq_element!(seq, high),
-                    low: next_seq_element!(seq, low),
-                    close: next_seq_element!(seq, close),
-                    volume: next_seq_element!(seq, volume),
-                })
-            }
-        }
-
-        deserializer.deserialize_seq(OHLCVVisitor)
-    }
-}
-
-/// Asset supported by Bitvavo.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Asset {
-    pub symbol: String,
-    pub name: String,
-    pub decimals: u64,
-    pub deposit_fee: String,
-    pub deposit_confirmations: u64,
-    pub deposit_status: AssetStatus,
-    pub withdrawal_fee: String,
-    pub withdrawal_min_amount: String,
-    pub withdrawal_status: AssetStatus,
-    pub networks: Vec<String>,
-    pub message: Option<String>,
-}
-
-/// The status of an asset.
-#[derive(Debug)]
-pub enum AssetStatus {
-    Ok,
-    Maintenance,
-    Delisted,
-}
-
-impl Serialize for AssetStatus {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            AssetStatus::Ok => serializer.serialize_str("OK"),
-            AssetStatus::Maintenance => serializer.serialize_str("MAINTENANCE"),
-            AssetStatus::Delisted => serializer.serialize_str("DELISTED"),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for AssetStatus {
-    fn deserialize<D>(deserializer: D) -> Result<AssetStatus, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-
-        match s.as_str() {
-            "OK" => Ok(AssetStatus::Ok),
-            "MAINTENANCE" => Ok(AssetStatus::Maintenance),
-            "DELISTED" => Ok(AssetStatus::Delisted),
-            s => Err(D::Error::invalid_value(
-                Unexpected::Str(s),
-                &"[OK, MAINTENANCE, DELISTED]",
-            )),
-        }
-    }
-}
-
 /// Get all the assets.
 ///
 /// ```no_run
@@ -275,62 +119,6 @@ pub async fn asset(symbol: &str) -> Result<Asset> {
         reqwest::get(format!("https://api.bitvavo.com/v2/assets?symbol={symbol}")).await?;
     let response = response_from_request(http_response).await?;
     Ok(response)
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Market {
-    #[serde(rename = "market")]
-    pub pair: String,
-    pub status: MarketStatus,
-    pub base: String,
-    pub quote: String,
-    pub price_precision: u64,
-    pub min_order_in_base_asset: String,
-    pub min_order_in_quote_asset: String,
-    pub max_order_in_base_asset: String,
-    pub max_order_in_quote_asset: String,
-    pub order_types: Vec<String>,
-}
-
-/// The status of a market.
-#[derive(Debug)]
-pub enum MarketStatus {
-    Trading,
-    Halted,
-    Auction,
-}
-
-impl Serialize for MarketStatus {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            MarketStatus::Trading => serializer.serialize_str("trading"),
-            MarketStatus::Halted => serializer.serialize_str("halted"),
-            MarketStatus::Auction => serializer.serialize_str("auction"),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for MarketStatus {
-    fn deserialize<D>(deserializer: D) -> Result<MarketStatus, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-
-        match s.as_str() {
-            "trading" => Ok(MarketStatus::Trading),
-            "halted" => Ok(MarketStatus::Halted),
-            "auction" => Ok(MarketStatus::Auction),
-            s => Err(D::Error::invalid_value(
-                Unexpected::Str(s),
-                &"[trading, halted, auction]",
-            )),
-        }
-    }
 }
 
 /// Get all the markets.
@@ -364,72 +152,6 @@ pub async fn market(pair: &str) -> Result<Market> {
     Ok(response)
 }
 
-/// Order book for a particular market.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct OrderBook {
-    pub market: String,
-    pub nonce: u64,
-    pub bids: Vec<Quote>,
-    pub asks: Vec<Quote>,
-}
-
-/// A quote in the order book.
-#[derive(Debug)]
-pub struct Quote {
-    pub price: String,
-    pub amount: String,
-}
-
-impl Serialize for Quote {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut seq = serializer.serialize_seq(Some(3))?;
-
-        seq.serialize_element(&self.price)?;
-        seq.serialize_element(&self.amount)?;
-
-        seq.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Quote {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct QuoteVisitor;
-
-        impl<'de> Visitor<'de> for QuoteVisitor {
-            type Value = Quote;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "Quote")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                macro_rules! next_seq_element {
-                    ($seq:ident, $name:ident) => {
-                        $seq.next_element()?
-                            .ok_or_else(|| A::Error::missing_field(stringify!($name)))?
-                    };
-                }
-
-                Ok(Quote {
-                    price: next_seq_element!(seq, price),
-                    amount: next_seq_element!(seq, amount),
-                })
-            }
-        }
-
-        deserializer.deserialize_seq(QuoteVisitor)
-    }
-}
-
 /// Get the order book for a particular market.
 ///
 /// ```no_run
@@ -451,50 +173,6 @@ pub async fn order_book(market: &str, depth: Option<u64>) -> Result<OrderBook> {
     let response = response_from_request(http_response).await?;
 
     Ok(response)
-}
-
-/// A trade performed on the exchange for a particular market.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Trade {
-    pub id: String,
-    pub timestamp: u64,
-    pub amount: String,
-    pub price: String,
-    pub side: TradeSide,
-}
-
-/// The side of a trade.
-#[derive(Debug)]
-pub enum TradeSide {
-    Buy,
-    Sell,
-}
-
-impl Serialize for TradeSide {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            TradeSide::Buy => serializer.serialize_str("buy"),
-            TradeSide::Sell => serializer.serialize_str("sell"),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for TradeSide {
-    fn deserialize<D>(deserializer: D) -> Result<TradeSide, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-
-        match s.as_str() {
-            "buy" => Ok(TradeSide::Buy),
-            "sell" => Ok(TradeSide::Sell),
-            s => Err(D::Error::invalid_value(Unexpected::Str(s), &"[buy, sell]")),
-        }
-    }
 }
 
 /// Get the trades for a particular market.
@@ -544,7 +222,7 @@ pub async fn trades(
 /// ```no_run
 /// # tokio_test::block_on(async {
 /// use bitvavo_api as bitvavo;
-/// use bitvavo::CandleInterval;
+/// use bitvavo::types::CandleInterval;
 ///
 /// let cs = bitvavo::candles("BTC-EUR", CandleInterval::OneDay, Some(1), None, None).await.unwrap();
 /// println!("High for BTC-EUR at {} was {}", cs[0].time, cs[0].high);
@@ -573,13 +251,6 @@ pub async fn candles(
     let response = response_from_request(http_response).await?;
 
     Ok(response)
-}
-
-/// A ticker for a given market pair.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct TickerPrice {
-    pub market: String,
-    pub price: Option<String>,
 }
 
 /// Get all the tickers.
@@ -617,17 +288,6 @@ pub async fn ticker_price(pair: &str) -> Result<TickerPrice> {
     Ok(response)
 }
 
-/// Highest buy and lowest sell prices currently available for a market.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TickerBook {
-    pub market: Option<String>,
-    pub bid: Option<String>,
-    pub bid_size: Option<String>,
-    pub ask: Option<String>,
-    pub ask_size: Option<String>,
-}
-
 /// Retrieve the highest buy and lowest sell prices currently available for all markets.
 ///
 /// ```no_run
@@ -661,27 +321,6 @@ pub async fn ticker_book(market: &str) -> Result<TickerBook> {
     .await?;
     let response = response_from_request(http_response).await?;
     Ok(response)
-}
-
-/// High, low, open, last, and volume information for trades for a given market over the previous 24h.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Ticker24h {
-    pub market: String,
-    pub start_timestamp: Option<u64>,
-    pub timestamp: Option<u64>,
-    pub open: Option<String>,
-    pub open_timestamp: Option<u64>,
-    pub high: Option<String>,
-    pub low: Option<String>,
-    pub last: Option<String>,
-    pub close_timestamp: Option<u64>,
-    pub bid: Option<String>,
-    pub bid_size: Option<String>,
-    pub ask: Option<String>,
-    pub ask_size: Option<String>,
-    pub volume: Option<String>,
-    pub volume_quote: Option<String>,
 }
 
 /// Retrieve high, low, open, last, and volume information for trades for all markets over the previous 24h.
