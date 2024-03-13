@@ -291,3 +291,26 @@ pub struct Ticker24h {
     pub volume: Option<String>,
     pub volume_quote: Option<String>,
 }
+
+/// The fees for an account.
+#[derive(Debug, Deserialize)]
+pub struct Account {
+    pub fees: AccountFees,
+}
+
+/// The fees in use for an account.
+#[derive(Debug, Deserialize)]
+pub struct AccountFees {
+    pub taker: String,
+    pub maker: String,
+    pub volume: String,
+}
+
+/// The balance of an account in a particular asset.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Balance {
+    pub symbol: String,
+    pub available: String,
+    pub in_order: String,
+}

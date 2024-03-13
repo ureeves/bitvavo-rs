@@ -13,6 +13,7 @@ on:
 jobs:
   check:
     uses: ./.github/workflows/check.yml
+    secrets: inherit
 
   publish:
     uses: ./.github/workflows/publish.yml

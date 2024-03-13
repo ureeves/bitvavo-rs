@@ -2,10 +2,13 @@ pub mod types;
 
 use std::error::Error as StdError;
 use std::fmt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use hmac::Mac;
 use reqwest::Response;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use types::*;
 
@@ -16,6 +19,14 @@ pub enum Error {
     Reqwest(reqwest::Error),
     Serde(serde_json::Error),
     Bitvavo { code: u64, message: String },
+    InvalidSecret(BadSecret),
+}
+
+/// Error type for a bad secret.
+#[derive(Debug)]
+pub enum BadSecret {
+    InvalidLength(hmac::digest::InvalidLength),
+    Hex(hex::FromHexError),
 }
 
 impl From<reqwest::Error> for Error {
@@ -30,6 +41,18 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl From<hmac::digest::InvalidLength> for Error {
+    fn from(err: hmac::digest::InvalidLength) -> Self {
+        Self::InvalidSecret(BadSecret::InvalidLength(err))
+    }
+}
+
+impl From<hex::FromHexError> for Error {
+    fn from(err: hex::FromHexError) -> Self {
+        Self::InvalidSecret(BadSecret::Hex(err))
+    }
+}
+
 async fn response_from_request<T: DeserializeOwned>(rsp: Response) -> Result<T, Error> {
     #[derive(Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -40,6 +63,9 @@ async fn response_from_request<T: DeserializeOwned>(rsp: Response) -> Result<T, 
 
     let status = rsp.status();
     let bytes = rsp.bytes().await?;
+
+    let s = String::from_utf8_lossy(&bytes);
+    println!("{s}");
 
     if status.is_success() {
         Ok(serde_json::from_slice(&bytes)?)
@@ -60,6 +86,10 @@ impl fmt::Display for Error {
             Error::Bitvavo { code, message } => {
                 write!(f, "bitvavo: {code}: {message}")
             }
+            Error::InvalidSecret(err) => match err {
+                BadSecret::InvalidLength(err) => write!(f, "invalid secret: {err}"),
+                BadSecret::Hex(err) => write!(f, "invalid secret: {err}"),
+            },
         }
     }
 }
@@ -74,9 +104,15 @@ impl Default for Client {
     }
 }
 
+struct Credentials {
+    key: Zeroizing<String>,
+    secret: Zeroizing<String>,
+}
+
 /// A client for the Bitvavo API.
 pub struct Client {
     client: reqwest::Client,
+    credentials: Option<Credentials>,
 }
 
 impl Client {
@@ -84,13 +120,54 @@ impl Client {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
+            credentials: None,
         }
     }
 
-    fn get(&self, endpoint: impl AsRef<str>) -> reqwest::RequestBuilder {
+    /// Create a new client for the Bitvavo API with credentials.
+    pub fn with_credentials(key: String, secret: String) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            credentials: Some(Credentials {
+                key: Zeroizing::new(key),
+                secret: Zeroizing::new(secret),
+            }),
+        }
+    }
+
+    fn get(&self, endpoint: impl AsRef<str>) -> Result<reqwest::RequestBuilder> {
         let endpoint = endpoint.as_ref();
-        self.client
-            .get(format!("https://api.bitvavo.com/v2/{endpoint}"))
+        let slug = format!("/v2/{endpoint}");
+
+        let mut req = self.client.get(format!("https://api.bitvavo.com{slug}"));
+
+        if let Some(credentials) = &self.credentials {
+            let key = &*credentials.key;
+            let secret = &*credentials.secret;
+
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_millis()
+                .to_string();
+
+            type Hmac = hmac::Hmac<sha2::Sha256>;
+
+            let mut hmac = Hmac::new_from_slice(secret.as_bytes())?;
+
+            hmac = hmac
+                .chain_update(&timestamp)
+                .chain_update("GET")
+                .chain_update(slug);
+
+            let signature = hex::encode(hmac.finalize().into_bytes());
+
+            req = req.header("Bitvavo-Access-Key", key);
+            req = req.header("Bitvavo-Access-Timestamp", timestamp);
+            req = req.header("Bitvavo-Access-Signature", signature);
+        }
+
+        Ok(req)
     }
 
     /// Get the current time.
@@ -111,7 +188,7 @@ impl Client {
             time: u64,
         }
 
-        let request = self.get("time");
+        let request = self.get("time")?;
 
         let http_response = request.send().await?;
         let response = response_from_request::<Response>(http_response).await?;
@@ -131,7 +208,7 @@ impl Client {
     /// println!("Number of assets: {}", assets.len());
     /// # })
     pub async fn assets(&self) -> Result<Vec<Asset>> {
-        let request = self.get("assets");
+        let request = self.get("assets")?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -151,7 +228,7 @@ impl Client {
     /// println!("Number of decimals used for BTC: {}", asset.decimals);
     /// # })
     pub async fn asset(&self, symbol: &str) -> Result<Asset> {
-        let request = self.get(format!("assets?symbol={symbol}"));
+        let request = self.get(format!("assets?symbol={symbol}"))?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -171,7 +248,7 @@ impl Client {
     /// println!("Number of markets: {}", markets.len());
     /// # })
     pub async fn markets(&self) -> Result<Vec<Market>> {
-        let request = self.get("markets");
+        let request = self.get("markets")?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -191,7 +268,7 @@ impl Client {
     /// println!("Price precision of BTC-EUR: {}", market.price_precision);
     /// # })
     pub async fn market(&self, pair: &str) -> Result<Market> {
-        let request = self.get(format!("markets?market={pair}"));
+        let request = self.get(format!("markets?market={pair}"))?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -218,7 +295,7 @@ impl Client {
             url.push_str(&format!("?depth={depth}"));
         }
 
-        let request = self.get(url);
+        let request = self.get(url)?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -265,7 +342,7 @@ impl Client {
             url.push_str(&format!("&tradeIdTo={trade_id_to}"));
         }
 
-        let request = self.get(url);
+        let request = self.get(url)?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -306,7 +383,7 @@ impl Client {
             url.push_str(&format!("&end={end}"));
         }
 
-        let request = self.get(url);
+        let request = self.get(url)?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -327,7 +404,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_prices(&self) -> Result<Vec<TickerPrice>> {
-        let request = self.get("ticker/price");
+        let request = self.get("ticker/price")?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -348,7 +425,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_price(&self, pair: &str) -> Result<TickerPrice> {
-        let request = self.get(format!("ticker/price?market={pair}"));
+        let request = self.get(format!("ticker/price?market={pair}"))?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -369,7 +446,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_books(&self) -> Result<Vec<TickerBook>> {
-        let request = self.get("ticker/book");
+        let request = self.get("ticker/book")?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -390,7 +467,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_book(&self, market: &str) -> Result<TickerBook> {
-        let request = self.get(format!("ticker/book?market={market}"));
+        let request = self.get(format!("ticker/book?market={market}"))?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -411,7 +488,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn tickers_24h(&self) -> Result<Vec<Ticker24h>> {
-        let request = self.get("ticker/24h");
+        let request = self.get("ticker/24h")?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -432,12 +509,81 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_24h(&self, market: &str) -> Result<Ticker24h> {
-        let request = self.get(format!("ticker/24h?market={market}"));
+        let request = self.get(format!("ticker/24h?market={market}"))?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
 
         Ok(response)
+    }
+
+    /// Retrieve information about the account.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let account = c.account().await.unwrap();
+    ///
+    /// println!("Fee for maker orders: {}", account.fees.maker);
+    /// # })
+    pub async fn account(&self) -> Result<Account> {
+        let request = self.get("account")?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
+
+    /// Retrieve balances for all assets in the account.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let balances = c.balances().await.unwrap();
+    ///
+    /// println!("Number of assets held: {}", balances.len());
+    /// # })
+    pub async fn balances(&self) -> Result<Vec<Balance>> {
+        let request = self.get("balance")?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
+
+    /// Retrieve balances for a particular asset in the account.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let balance = c.balance("BTC").await.unwrap();
+    ///
+    /// println!("BTC available: {}", balance.available);
+    /// # })
+    pub async fn balance(&self, symbol: &str) -> Result<Balance> {
+        let request = self.get(format!("balance?symbol={symbol}"))?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request::<Vec<Balance>>(http_response).await?;
+
+        Ok(response.into_iter().next().unwrap())
     }
 }
 
@@ -581,5 +727,56 @@ mod tests {
             .expect_err("Getting an invalid market should fail");
 
         assert!(matches!(err, Error::Bitvavo { .. }));
+    }
+
+    #[cfg(feature = "auth-tests")]
+    mod auth {
+        use super::*;
+
+        const API_KEY: &str = env!(
+            "BITVAVO_API_KEY",
+            "Testing authenticated endpoints requires an API key"
+        );
+
+        const API_SECRET: &str = env!(
+            "BITVAVO_API_SECRET",
+            "Testing authenticated endpoints requires an API secret"
+        );
+
+        #[tokio::test]
+        async fn get_account() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .account()
+                .await
+                .expect("Getting the account should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn get_balances() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .balances()
+                .await
+                .expect("Getting the balances of the account should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn get_balance() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .balance("BTC")
+                .await
+                .expect("Getting the balance of the account in a given asset should succeed");
+
+            Ok(())
+        }
     }
 }

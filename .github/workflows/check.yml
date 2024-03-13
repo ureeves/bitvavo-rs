@@ -7,6 +7,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rust:latest
+    env:
+      BITVAVO_API_KEY: ${{ secrets.BITVAVO_API_KEY }}
+      BITVAVO_API_SECRET: ${{ secrets.BITVAVO_API_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - run: cargo test --all-features
