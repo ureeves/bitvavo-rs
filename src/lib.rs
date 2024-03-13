@@ -87,6 +87,12 @@ impl Client {
         }
     }
 
+    fn get(&self, endpoint: impl AsRef<str>) -> reqwest::RequestBuilder {
+        let endpoint = endpoint.as_ref();
+        self.client
+            .get(format!("https://api.bitvavo.com/v2/{endpoint}"))
+    }
+
     /// Get the current time.
     ///
     /// ```no_run
@@ -105,7 +111,7 @@ impl Client {
             time: u64,
         }
 
-        let request = self.client.get("https://api.bitvavo.com/v2/time");
+        let request = self.get("time");
 
         let http_response = request.send().await?;
         let response = response_from_request::<Response>(http_response).await?;
@@ -125,7 +131,7 @@ impl Client {
     /// println!("Number of assets: {}", assets.len());
     /// # })
     pub async fn assets(&self) -> Result<Vec<Asset>> {
-        let request = self.client.get("https://api.bitvavo.com/v2/assets");
+        let request = self.get("assets");
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -145,9 +151,7 @@ impl Client {
     /// println!("Number of decimals used for BTC: {}", asset.decimals);
     /// # })
     pub async fn asset(&self, symbol: &str) -> Result<Asset> {
-        let request = self
-            .client
-            .get(format!("https://api.bitvavo.com/v2/assets?symbol={symbol}"));
+        let request = self.get(format!("assets?symbol={symbol}"));
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -167,7 +171,7 @@ impl Client {
     /// println!("Number of markets: {}", markets.len());
     /// # })
     pub async fn markets(&self) -> Result<Vec<Market>> {
-        let request = self.client.get("https://api.bitvavo.com/v2/markets");
+        let request = self.get("markets");
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -187,9 +191,7 @@ impl Client {
     /// println!("Price precision of BTC-EUR: {}", market.price_precision);
     /// # })
     pub async fn market(&self, pair: &str) -> Result<Market> {
-        let request = self
-            .client
-            .get(format!("https://api.bitvavo.com/v2/markets?market={pair}"));
+        let request = self.get(format!("markets?market={pair}"));
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -210,13 +212,13 @@ impl Client {
     /// # })
     /// ```
     pub async fn order_book(&self, market: &str, depth: Option<u64>) -> Result<OrderBook> {
-        let mut url = format!("https://api.bitvavo.com/v2/{market}/book");
+        let mut url = format!("{market}/book");
 
         if let Some(depth) = depth {
             url.push_str(&format!("?depth={depth}"));
         }
 
-        let request = self.client.get(url);
+        let request = self.get(url);
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -245,7 +247,7 @@ impl Client {
         trade_id_from: Option<String>,
         trade_id_to: Option<String>,
     ) -> Result<Vec<Trade>> {
-        let mut url = format!("https://api.bitvavo.com/v2/{market}/trades");
+        let mut url = format!("{market}/trades");
 
         if let Some(limit) = limit {
             url.push_str(&format!("?limit={limit}"));
@@ -263,7 +265,7 @@ impl Client {
             url.push_str(&format!("&tradeIdTo={trade_id_to}"));
         }
 
-        let request = self.client.get(url);
+        let request = self.get(url);
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -292,7 +294,7 @@ impl Client {
         start: Option<u64>,
         end: Option<u64>,
     ) -> Result<Vec<OHLCV>> {
-        let mut url = format!("https://api.bitvavo.com/v2/{market}/candles?interval={interval}");
+        let mut url = format!("{market}/candles?interval={interval}");
 
         if let Some(limit) = limit {
             url.push_str(&format!("&limit={limit}"));
@@ -304,7 +306,7 @@ impl Client {
             url.push_str(&format!("&end={end}"));
         }
 
-        let request = self.client.get(url);
+        let request = self.get(url);
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -325,7 +327,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_prices(&self) -> Result<Vec<TickerPrice>> {
-        let request = self.client.get("https://api.bitvavo.com/v2/ticker/price");
+        let request = self.get("ticker/price");
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -346,9 +348,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_price(&self, pair: &str) -> Result<TickerPrice> {
-        let request = self.client.get(format!(
-            "https://api.bitvavo.com/v2/ticker/price?market={pair}"
-        ));
+        let request = self.get(format!("ticker/price?market={pair}"));
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -369,7 +369,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_books(&self) -> Result<Vec<TickerBook>> {
-        let request = self.client.get("https://api.bitvavo.com/v2/ticker/book");
+        let request = self.get("ticker/book");
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -390,9 +390,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_book(&self, market: &str) -> Result<TickerBook> {
-        let request = self.client.get(format!(
-            "https://api.bitvavo.com/v2/ticker/book?market={market}"
-        ));
+        let request = self.get(format!("ticker/book?market={market}"));
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -413,7 +411,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn tickers_24h(&self) -> Result<Vec<Ticker24h>> {
-        let request = self.client.get("https://api.bitvavo.com/v2/ticker/24h");
+        let request = self.get("ticker/24h");
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -434,9 +432,7 @@ impl Client {
     /// # })
     /// ```
     pub async fn ticker_24h(&self, market: &str) -> Result<Ticker24h> {
-        let request = self.client.get(format!(
-            "https://api.bitvavo.com/v2/ticker/24h?market={market}"
-        ));
+        let request = self.get(format!("ticker/24h?market={market}"));
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
