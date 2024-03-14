@@ -585,6 +585,35 @@ impl Client {
 
         Ok(response.into_iter().next().unwrap())
     }
+
+    /// Get the fees that are charged for trading in a particular market. If no market is provided,
+    /// the fees for catrgory B are returned.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let fees = c.fees(None).await.unwrap();
+    ///
+    /// println!("Taker fee for category B: {}", fees.taker);
+    /// # })
+    pub async fn fees(&self, market: Option<&str>) -> Result<Fees> {
+        let url = match market {
+            Some(market) => format!("account/fees?market={market}"),
+            None => "account/fees".to_string(),
+        };
+
+        let request = self.get(url)?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
 }
 
 #[cfg(test)]
@@ -773,6 +802,18 @@ mod tests {
 
             client
                 .balance("BTC")
+                .await
+                .expect("Getting the balance of the account in a given asset should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn get_fees() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .fees(None)
                 .await
                 .expect("Getting the balance of the account in a given asset should succeed");
 

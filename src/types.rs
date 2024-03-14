@@ -314,3 +314,12 @@ pub struct Balance {
     pub available: String,
     pub in_order: String,
 }
+
+/// Fees charged for a market on an account.
+#[derive(Debug, Deserialize)]
+pub struct Fees {
+    pub tier: u64,
+    pub volume: String,
+    pub taker: String,
+    pub maker: String,
+}
