@@ -64,9 +64,6 @@ async fn response_from_request<T: DeserializeOwned>(rsp: Response) -> Result<T, 
     let status = rsp.status();
     let bytes = rsp.bytes().await?;
 
-    let s = String::from_utf8_lossy(&bytes);
-    println!("{s}");
-
     if status.is_success() {
         Ok(serde_json::from_slice(&bytes)?)
     } else {
@@ -115,6 +112,11 @@ pub struct Client {
     credentials: Option<Credentials>,
 }
 
+enum Method<T = ()> {
+    Get,
+    Post(T),
+}
+
 impl Client {
     /// Create a new client for the Bitvavo API.
     pub fn new() -> Self {
@@ -135,11 +137,26 @@ impl Client {
         }
     }
 
-    fn get(&self, endpoint: impl AsRef<str>) -> Result<reqwest::RequestBuilder> {
+    fn request<T: Serialize>(
+        &self,
+        endpoint: impl AsRef<str>,
+        method: Method<T>,
+    ) -> Result<reqwest::RequestBuilder> {
         let endpoint = endpoint.as_ref();
         let slug = format!("/v2/{endpoint}");
 
-        let mut req = self.client.get(format!("https://api.bitvavo.com{slug}"));
+        let url = format!("https://api.bitvavo.com{slug}");
+
+        let (mut req, method, body) = match method {
+            Method::Get => {
+                let req = self.client.get(url);
+                (req, "GET", String::new())
+            }
+            Method::Post(body) => {
+                let req = self.client.post(url);
+                (req, "POST", serde_json::to_string(&body)?)
+            }
+        };
 
         if let Some(credentials) = &self.credentials {
             let key = &*credentials.key;
@@ -152,13 +169,13 @@ impl Client {
                 .to_string();
 
             type Hmac = hmac::Hmac<sha2::Sha256>;
-
             let mut hmac = Hmac::new_from_slice(secret.as_bytes())?;
 
             hmac = hmac
                 .chain_update(&timestamp)
-                .chain_update("GET")
-                .chain_update(slug);
+                .chain_update(method)
+                .chain_update(slug)
+                .chain_update(&body);
 
             let signature = hex::encode(hmac.finalize().into_bytes());
 
@@ -167,7 +184,23 @@ impl Client {
             req = req.header("Bitvavo-Access-Signature", signature);
         }
 
+        req = req.body(body);
+
         Ok(req)
+    }
+
+    #[inline(always)]
+    fn get(&self, endpoint: impl AsRef<str>) -> Result<reqwest::RequestBuilder> {
+        self.request(endpoint, Method::<()>::Get)
+    }
+
+    #[inline(always)]
+    fn post<T: Serialize>(
+        &self,
+        endpoint: impl AsRef<str>,
+        body: T,
+    ) -> Result<reqwest::RequestBuilder> {
+        self.request(endpoint, Method::Post(body))
     }
 
     /// Get the current time.
@@ -614,6 +647,152 @@ impl Client {
 
         Ok(response)
     }
+
+    /// Returns the deposit address or bank account information to increase the balance.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let deposit_info = c.deposit_info("BTC").await.unwrap();
+    ///
+    /// println!("BTC deposit address: {}", deposit_info.address);
+    /// # })
+    /// ```
+    pub async fn deposit_info(&self, symbol: &str) -> Result<DepositInfo> {
+        let request = self.get(format!("deposit?symbol={symbol}"))?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
+
+    /// Returns the deposit history of the account.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    /// use bitvavo::types::Deposit;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let deposit_history = c.deposit_history(None, None, None, None).await.unwrap();
+    ///
+    /// println!("Number of deposits: {}", deposit_history.len());
+    /// # })
+    pub async fn deposit_history(
+        &self,
+        symbol: Option<&str>,
+        limit: Option<u64>,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> Result<Vec<Deposit>> {
+        let mut url = String::from("depositHistory");
+
+        if let Some(symbol) = symbol {
+            url.push_str(&format!("?symbol={symbol}"));
+        }
+        if let Some(limit) = limit {
+            url.push_str(&format!("&limit={limit}"));
+        }
+        if let Some(start) = start {
+            url.push_str(&format!("&start={start}"));
+        }
+        if let Some(end) = end {
+            url.push_str(&format!("&end={end}"));
+        }
+
+        let request = self.get(url)?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
+
+    /// Withdraw an asset from the account to a given address.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    /// use bitvavo::types::WithdrawOrder;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let response = c.withdraw(WithdrawOrder {
+    ///     symbol: String::from("BTC"),
+    ///     amount: String::from("0.1"),
+    ///     address: String::from("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"),
+    ///     payment_id: None,
+    ///     internal: false,
+    ///     add_withdrawal_fee: false,
+    /// }).await.unwrap();
+    ///
+    /// println!("Withdrawal succeeded: {}", response.success);
+    /// # })
+    /// ```
+    pub async fn withdraw(&self, order: WithdrawOrder) -> Result<WithdrawalOrderResponse> {
+        let request = self.post("withdrawal", order)?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
+
+    /// Returns the withdrawal history of the account.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    /// use bitvavo::types::Deposit;
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let deposit_history = c.withdrawal_history(None, None, None, None).await.unwrap();
+    ///
+    /// println!("Number of withdrawals: {}", deposit_history.len());
+    /// # })
+    pub async fn withdrawal_history(
+        &self,
+        symbol: Option<&str>,
+        limit: Option<u64>,
+        start: Option<u64>,
+        end: Option<u64>,
+    ) -> Result<Vec<Withdrawal>> {
+        let mut url = String::from("withdrawalHistory");
+
+        if let Some(symbol) = symbol {
+            url.push_str(&format!("?symbol={symbol}"));
+        }
+        if let Some(limit) = limit {
+            url.push_str(&format!("&limit={limit}"));
+        }
+        if let Some(start) = start {
+            url.push_str(&format!("&start={start}"));
+        }
+        if let Some(end) = end {
+            url.push_str(&format!("&end={end}"));
+        }
+
+        let request = self.get(url)?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
 }
 
 #[cfg(test)]
@@ -816,6 +995,61 @@ mod tests {
                 .fees(None)
                 .await
                 .expect("Getting the balance of the account in a given asset should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn get_deposit_info() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .deposit_info("BTC")
+                .await
+                .expect("Getting the deposit info for a given asset should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn get_deposit_history() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .deposit_history(None, None, None, None)
+                .await
+                .expect("Getting the deposit info for a given asset should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn do_withdraw() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .withdraw(WithdrawOrder {
+                    symbol: "BTC".to_string(),
+                    amount: "1".to_string(),
+                    address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa".to_string(),
+                    payment_id: None,
+                    internal: true,
+                    add_withdrawal_fee: false,
+                })
+                .await
+                .expect("Withdrawing should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn get_withdrawal_history() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .withdrawal_history(None, None, None, None)
+                .await
+                .expect("Getting the deposit info for a given asset should succeed");
 
             Ok(())
         }

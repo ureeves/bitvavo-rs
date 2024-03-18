@@ -1,7 +1,7 @@
 use std::fmt;
 
 use serde::de::{Error, SeqAccess, Unexpected, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Time interval between each candlestick.
 #[derive(Debug)]
@@ -322,4 +322,119 @@ pub struct Fees {
     pub volume: String,
     pub taker: String,
     pub maker: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DepositInfo {
+    pub address: String,
+    pub payment_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Deposit {
+    pub timestamp: u64,
+    pub symbol: String,
+    pub amount: String,
+    pub fee: String,
+    pub status: DepositStatus,
+    pub tx_id: Option<String>,
+    pub address: Option<String>,
+    pub payment_id: Option<String>,
+}
+
+/// The status of a deposit.
+#[derive(Debug)]
+pub enum DepositStatus {
+    Completed,
+    Canceled,
+}
+
+impl<'de> Deserialize<'de> for DepositStatus {
+    fn deserialize<D>(deserializer: D) -> crate::Result<DepositStatus, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        match s.as_str() {
+            "completed" => Ok(DepositStatus::Completed),
+            "canceled" => Ok(DepositStatus::Canceled),
+            s => Err(D::Error::invalid_value(
+                Unexpected::Str(s),
+                &"[completed, canceled]",
+            )),
+        }
+    }
+}
+
+/// Information about a withdrawal.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Withdrawal {
+    pub timestamp: u64,
+    pub symbol: String,
+    pub amount: String,
+    pub address: Option<String>,
+    pub payment_id: Option<String>,
+    pub tx_id: Option<String>,
+    pub fee: String,
+    pub status: WithdrawalStatus,
+}
+
+/// The status of a withdrawal.
+#[derive(Debug)]
+pub enum WithdrawalStatus {
+    AwaitingProcessing,
+    AwaitingEmailConfirmation,
+    AwaitingBitvavoInspection,
+    Approved,
+    Sending,
+    InMempool,
+    Processed,
+    Completed,
+    Canceled,
+}
+
+impl<'de> Deserialize<'de> for WithdrawalStatus {
+    fn deserialize<D>(deserializer: D) -> crate::Result<WithdrawalStatus, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+
+        match s.as_str() {
+            "awaiting_processing" => Ok(WithdrawalStatus::AwaitingProcessing),
+            "awaiting_email_confirmation" => Ok(WithdrawalStatus::AwaitingEmailConfirmation),
+            "awaiting_bitvavo_inspection" => Ok(WithdrawalStatus::AwaitingBitvavoInspection),
+            "approved" => Ok(WithdrawalStatus::Approved),
+            "sending" => Ok(WithdrawalStatus::Sending),
+            "in_mempool" => Ok(WithdrawalStatus::InMempool),
+            "processed" => Ok(WithdrawalStatus::Processed),
+            "completed" => Ok(WithdrawalStatus::Completed),
+            "canceled" => Ok(WithdrawalStatus::Canceled),
+            s => Err(D::Error::invalid_value(
+                Unexpected::Str(s),
+                &"[awaiting_processing, awaiting_email_confirmation, awaiting_bitvavo_inspection, approved, sending, in_mempool, processed, completed, canceled]",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WithdrawOrder {
+    pub symbol: String,
+    pub amount: String,
+    pub address: String,
+    pub payment_id: Option<String>,
+    pub internal: bool,
+    pub add_withdrawal_fee: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WithdrawalOrderResponse {
+    pub success: bool,
+    pub symbol: String,
+    pub amount: String,
 }
