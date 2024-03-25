@@ -203,6 +203,8 @@ impl Client {
         self.request(endpoint, Method::Post(body))
     }
 
+    // Synchronization endpoints
+
     /// Get the current time.
     ///
     /// ```no_run
@@ -308,6 +310,8 @@ impl Client {
 
         Ok(response)
     }
+
+    // Market data endpoints
 
     /// Get the order book for a particular market.
     ///
@@ -550,6 +554,8 @@ impl Client {
         Ok(response)
     }
 
+    // Account endpoints
+
     /// Retrieve information about the account.
     ///
     /// ```no_run
@@ -647,6 +653,8 @@ impl Client {
 
         Ok(response)
     }
+
+    // Transfer endpoints
 
     /// Returns the deposit address or bank account information to increase the balance.
     ///
@@ -787,6 +795,49 @@ impl Client {
         }
 
         let request = self.get(url)?;
+
+        let http_response = request.send().await?;
+        let response = response_from_request(http_response).await?;
+
+        Ok(response)
+    }
+
+    // Trading endpoints
+
+    /// Places an order on the exchange.
+    ///
+    /// ```no_run
+    /// # tokio_test::block_on(async {
+    /// use bitvavo_api as bitvavo;
+    /// use bitvavo::types::{Order, OrderType, TradeSide, TimeInForce};
+    ///
+    /// let key = String::from("YOUR_API_KEY");
+    /// let secret = String::from("YOUR_API_SECRET");
+    ///
+    /// let c = bitvavo::Client::with_credentials(key, secret);
+    /// let response = c.place_order(Order {
+    ///     market: String::from("BTC-EUR"),
+    ///     side: TradeSide::Sell,
+    ///     order_type: OrderType::Limit,
+    ///     client_order_id: None,
+    ///     amount: Some(String::from("1")),
+    ///     amount_quote: None,
+    ///     price: Some(String::from("1000000")),
+    ///     trigger_amount: None,
+    ///     trigger_type: None,
+    ///     trigger_reference: None,
+    ///     time_in_force: Some(TimeInForce::ImmediateOrCancel),
+    ///     post_only: None,
+    ///     self_trade_prevention: None,
+    ///     disable_market_protection: false,
+    ///     response_required: false,
+    /// }).await.unwrap();
+    ///
+    /// println!("Order ID: {}", response.order_id);
+    /// # })
+    /// ```
+    pub async fn place_order(&self, order: Order) -> Result<OrderResponse> {
+        let request = self.post("order", order)?;
 
         let http_response = request.send().await?;
         let response = response_from_request(http_response).await?;
@@ -1050,6 +1101,34 @@ mod tests {
                 .withdrawal_history(None, None, None, None)
                 .await
                 .expect("Getting the deposit info for a given asset should succeed");
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn do_order() -> Result<()> {
+            let client = Client::with_credentials(API_KEY.to_string(), API_SECRET.to_string());
+
+            client
+                .place_order(Order {
+                    market: String::from("BTC-EUR"),
+                    side: TradeSide::Sell,
+                    order_type: OrderType::Limit,
+                    client_order_id: None,
+                    amount: Some(String::from("1")),
+                    amount_quote: None,
+                    price: Some(String::from("1000000")),
+                    trigger_amount: None,
+                    trigger_type: None,
+                    trigger_reference: None,
+                    time_in_force: Some(TimeInForce::ImmediateOrCancel),
+                    post_only: None,
+                    self_trade_prevention: None,
+                    disable_market_protection: false,
+                    response_required: false,
+                })
+                .await
+                .expect("Placing an order should succeed");
 
             Ok(())
         }

@@ -3,6 +3,8 @@ use std::fmt;
 use serde::de::{Error, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use uuid::Uuid;
+
 /// Time interval between each candlestick.
 #[derive(Debug)]
 pub enum CandleInterval {
@@ -238,6 +240,18 @@ pub enum TradeSide {
     Sell,
 }
 
+impl Serialize for TradeSide {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            TradeSide::Buy => serializer.serialize_str("buy"),
+            TradeSide::Sell => serializer.serialize_str("sell"),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for TradeSide {
     fn deserialize<D>(deserializer: D) -> crate::Result<TradeSide, D::Error>
     where
@@ -437,4 +451,147 @@ pub struct WithdrawalOrderResponse {
     pub success: bool,
     pub symbol: String,
     pub amount: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Order {
+    pub market: String,
+    pub side: TradeSide,
+    pub order_type: OrderType,
+    pub client_order_id: Option<Uuid>,
+    pub amount: Option<String>,
+    pub amount_quote: Option<String>,
+    pub price: Option<String>,
+    pub trigger_amount: Option<String>,
+    pub trigger_type: Option<TriggerType>,
+    pub trigger_reference: Option<TriggerReference>,
+    pub time_in_force: Option<TimeInForce>,
+    pub post_only: Option<bool>,
+    pub self_trade_prevention: Option<SelfTradePrevention>,
+    pub disable_market_protection: bool,
+    pub response_required: bool,
+}
+
+/// The type of order.
+#[derive(Debug)]
+pub enum OrderType {
+    Market,
+    Limit,
+    StopLoss,
+    StopLossLimit,
+    TakeProfit,
+    TakeProfitLimit,
+}
+
+impl Serialize for OrderType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            OrderType::Market => serializer.serialize_str("market"),
+            OrderType::Limit => serializer.serialize_str("limit"),
+            OrderType::StopLoss => serializer.serialize_str("stopLoss"),
+            OrderType::StopLossLimit => serializer.serialize_str("stopLossLimit"),
+            OrderType::TakeProfit => serializer.serialize_str("takeProfit"),
+            OrderType::TakeProfitLimit => serializer.serialize_str("takeProfitLimit"),
+        }
+    }
+}
+
+/// The type of trigger that will cause an order to be filled.
+#[derive(Debug)]
+pub enum TriggerType {
+    Price,
+}
+
+impl Serialize for TriggerType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            TriggerType::Price => serializer.serialize_str("price"),
+        }
+    }
+}
+
+/// The price type that triggers an order to be filled.
+#[derive(Debug)]
+pub enum TriggerReference {
+    LastTrade,
+    BestBid,
+    BestAsk,
+    MidPrice,
+}
+
+impl Serialize for TriggerReference {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            TriggerReference::LastTrade => serializer.serialize_str("lastTrade"),
+            TriggerReference::BestBid => serializer.serialize_str("bestBid"),
+            TriggerReference::BestAsk => serializer.serialize_str("bestAsk"),
+            TriggerReference::MidPrice => serializer.serialize_str("midPrice"),
+        }
+    }
+}
+
+/// How long an order should remain active.
+#[derive(Debug)]
+pub enum TimeInForce {
+    GoodTillCancelled,
+    FillOrKill,
+    ImmediateOrCancel,
+}
+
+impl Serialize for TimeInForce {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            TimeInForce::GoodTillCancelled => serializer.serialize_str("GTC"),
+            TimeInForce::FillOrKill => serializer.serialize_str("FOK"),
+            TimeInForce::ImmediateOrCancel => serializer.serialize_str("IOC"),
+        }
+    }
+}
+
+/// How to handle self trades.
+#[derive(Debug)]
+pub enum SelfTradePrevention {
+    DecrementAndCancel,
+    CancelBoth,
+    CancelNewest,
+    CancelOldest,
+}
+
+impl Serialize for SelfTradePrevention {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            SelfTradePrevention::DecrementAndCancel => {
+                serializer.serialize_str("decrementAndCancel")
+            }
+            SelfTradePrevention::CancelBoth => serializer.serialize_str("cancelBoth"),
+            SelfTradePrevention::CancelNewest => serializer.serialize_str("cancelNewest"),
+            SelfTradePrevention::CancelOldest => serializer.serialize_str("cancelOldest"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderResponse {
+    pub market: String,
+    pub order_id: Uuid,
+    pub client_order_id: Option<Uuid>,
+    pub created: u64,
+    pub updated: u64,
 }
